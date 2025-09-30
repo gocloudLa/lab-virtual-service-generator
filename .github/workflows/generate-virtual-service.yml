@@ -34,6 +34,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install yq
+        run: |
+          which yq || true
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
       - name: Fetch PRs with preview-stg label
         id: fetch-prs
         env:
@@ -93,6 +99,12 @@ jobs:
           # Copiar el template
           cp .github/virtual-service-template.yml "$GENERATED_FILE"
           
+          # Aplicar variables dinámicas usando yq
+          yq eval ".metadata.name = \"$VIRTUAL_SERVICE_NAME\"" -i "$GENERATED_FILE"
+          yq eval ".metadata.namespace = \"$NAMESPACE\"" -i "$GENERATED_FILE"
+          yq eval ".metadata.annotations.\"meta.helm.sh/release-namespace\" = \"$NAMESPACE\"" -i "$GENERATED_FILE"
+          yq eval ".spec.http[0].delegate.namespace = \"$NAMESPACE\"" -i "$GENERATED_FILE"
+          
           # Generar matches dinámicos
           if [ "$PR_COUNT" -gt 0 ]; then
             echo "📝 Generating dynamic matches..."
@@ -115,34 +127,21 @@ jobs:
             echo "$MATCHES_PARTICULAR" >> "$MATCHES_FILE"
             echo "$MATCHES_GLOBAL" >> "$MATCHES_FILE"
             
+            # Insertar los matches usando yq
+            # Leer los matches del archivo temporal
+            MATCHES_CONTENT=$(cat "$MATCHES_FILE")
+            
+            # Convertir a JSON para yq
+            MATCHES_JSON=$(echo "$MATCHES_CONTENT" | yq eval -o=json)
+            
             # Insertar los matches antes del delegate stable-nginx
-            # Crear archivo temporal con el contenido final
-            FINAL_FILE=$(mktemp)
-            
-            # Copiar hasta el comentario
-            head -n -2 "$GENERATED_FILE" > "$FINAL_FILE"
-            
-            # Agregar los matches
-            cat "$MATCHES_FILE" >> "$FINAL_FILE"
-            
-            # Agregar el delegate final
-            echo "  - delegate:" >> "$FINAL_FILE"
-            echo "      name: stable-nginx" >> "$FINAL_FILE"
-            echo "      namespace: $NAMESPACE" >> "$FINAL_FILE"
-            
-            # Reemplazar el archivo original
-            mv "$FINAL_FILE" "$GENERATED_FILE"
+            yq eval ".spec.http = $MATCHES_JSON + .spec.http" -i "$GENERATED_FILE"
             
             # Limpiar archivos temporales
             rm -f "$MATCHES_FILE"
           else
             echo "ℹ️  No PRs found, using template as-is"
-            # Actualizar el namespace en el delegate final
-            sed -i "s/namespace: preview/namespace: $NAMESPACE/g" "$GENERATED_FILE"
           fi
-          
-          # Actualizar el nombre del VirtualService
-          sed -i "s/name: core-webapp-root/name: $VIRTUAL_SERVICE_NAME/g" "$GENERATED_FILE"
           
           echo "✅ Virtual Service generated successfully!"
           echo "📄 Generated file: $GENERATED_FILE"
