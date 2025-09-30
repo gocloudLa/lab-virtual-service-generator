@@ -105,36 +105,28 @@ jobs:
           if [ "$PR_COUNT" -gt 0 ]; then
             echo "📝 Generating dynamic matches..."
             
-            # Crear archivo temporal para los matches
-            # MATCHES_FILE=$(mktemp)
-            
-            # Procesar cada PR
+            # Procesar cada PR y agregar matches directamente al archivo
             echo "$PRS_JSON" | jq -r '.[] | "\(.number)|\(.branch)"' | while IFS='|' read -r pr_number branch_name; do
               echo "  🔧 Processing PR #$pr_number with branch: $branch_name"
               
               # Agregar match para el header core
-              MATCHES_PARTICULAR=$(printf "  - match:\n    - headers:\n        %s:\n          exact: %s\n    delegate:\n      name: pr%s-nginx\n      namespace: %s" "$CORE_HEADER_NAME" "$branch_name" "$pr_number" "$NAMESPACE")
+              echo "  - match:" >> "$GENERATED_FILE"
+              echo "    - headers:" >> "$GENERATED_FILE"
+              echo "        $CORE_HEADER_NAME:" >> "$GENERATED_FILE"
+              echo "          exact: $branch_name" >> "$GENERATED_FILE"
+              echo "    delegate:" >> "$GENERATED_FILE"
+              echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
+              echo "      namespace: $NAMESPACE" >> "$GENERATED_FILE"
               
               # Agregar match para x-gocloud-vo-all
-              MATCHES_GLOBAL=$(printf "  - match:\n    - headers:\n        x-gocloud-vo-all:\n          exact: %s\n    delegate:\n      name: pr%s-nginx\n      namespace: %s" "$branch_name" "$pr_number" "$NAMESPACE")
+              echo "  - match:" >> "$GENERATED_FILE"
+              echo "    - headers:" >> "$GENERATED_FILE"
+              echo "        x-gocloud-vo-all:" >> "$GENERATED_FILE"
+              echo "          exact: $branch_name" >> "$GENERATED_FILE"
+              echo "    delegate:" >> "$GENERATED_FILE"
+              echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
+              echo "      namespace: $NAMESPACE" >> "$GENERATED_FILE"
             done
-            
-            # Agregar los matches al archivo usando las variables
-            echo "$MATCHES_PARTICULAR" >> "$MATCHES_FILE"
-            echo "$MATCHES_GLOBAL" >> "$MATCHES_FILE"
-            
-            # Insertar los matches usando yq
-            # Leer los matches del archivo temporal
-            MATCHES_CONTENT=$(cat "$MATCHES_FILE")
-            
-            # Convertir a JSON para yq
-            MATCHES_JSON=$(echo "$MATCHES_CONTENT" | yq eval -o=json)
-            
-            # Insertar los matches antes del delegate stable-nginx
-            yq eval ".spec.http = $MATCHES_JSON + .spec.http" -i "$GENERATED_FILE"
-            
-            # Limpiar archivos temporales
-            rm -f "$MATCHES_FILE"
           else
             echo "ℹ️  No PRs found, using template as-is"
           fi
