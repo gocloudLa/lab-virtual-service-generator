@@ -1,35 +1,27 @@
-name: Generate Virtual Service
+name: Generate Virtual Service Job
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_call:
     inputs:
       TARGET_BRANCH:
         description: 'Target branch to check for PRs'
-        required: false
-        default: 'development'
+        required: true
         type: string
       VIRTUAL_SERVICE_NAME:
         description: 'Name for the generated VirtualService'
-        required: false
-        default: 'core-webapp-root'
+        required: true
         type: string
       NAMESPACE:
         description: 'Kubernetes namespace'
-        required: false
-        default: 'preview'
+        required: true
         type: string
       CORE_HEADER_NAME:
-        description: 'Name for the core header (default: x-gocloud-vo-core)'
-        required: false
-        default: 'x-gocloud-vo-core'
+        description: 'Name for the core header'
+        required: true
         type: string
       HOST_PATTERN:
-        description: 'Host pattern for the VirtualService (default: *.test-gocloud.democorp.cloud)'
-        required: false
-        default: '*.test-gocloud.democorp.cloud'
+        description: 'Host pattern for the VirtualService'
+        required: true
         type: string
 
 jobs:
@@ -43,7 +35,7 @@ jobs:
         id: fetch-prs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_BRANCH: ${{ inputs.TARGET_BRANCH || 'development' }}
+          TARGET_BRANCH: ${{ inputs.TARGET_BRANCH }}
         run: |
           echo "🔍 Searching for open PRs to branch: $TARGET_BRANCH with label 'preview-stg'"
           

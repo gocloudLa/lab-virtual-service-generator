@@ -1,0 +1,43 @@
+name: Generate Virtual Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      TARGET_BRANCH:
+        description: 'Target branch to check for PRs'
+        required: false
+        default: 'development'
+        type: string
+      VIRTUAL_SERVICE_NAME:
+        description: 'Name for the generated VirtualService'
+        required: false
+        default: 'core-webapp-root'
+        type: string
+      NAMESPACE:
+        description: 'Kubernetes namespace'
+        required: false
+        default: 'preview'
+        type: string
+      CORE_HEADER_NAME:
+        description: 'Name for the core header'
+        required: false
+        default: 'x-gocloud-vo-core'
+        type: string
+      HOST_PATTERN:
+        description: 'Host pattern for the VirtualService'
+        required: false
+        default: '*.test-gocloud.democorp.cloud'
+        type: string
+
+jobs:
+  generate-virtual-service:
+    uses: ./.github/workflows/generate-virtual-service-job.yml
+    with:
+      TARGET_BRANCH: ${{ inputs.TARGET_BRANCH || 'development' }}
+      VIRTUAL_SERVICE_NAME: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}
+      NAMESPACE: ${{ inputs.NAMESPACE || 'preview' }}
+      CORE_HEADER_NAME: ${{ inputs.CORE_HEADER_NAME || 'x-gocloud-vo-core' }}
+      HOST_PATTERN: ${{ inputs.HOST_PATTERN || '*.test-gocloud.democorp.cloud' }}
