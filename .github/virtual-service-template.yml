@@ -1,0 +1,20 @@
+kind: VirtualService
+apiVersion: networking.istio.io/v1
+metadata:
+  name: core-webapp-root
+  namespace: preview
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: stable-core-forwarder
+    meta.helm.sh/release-namespace: preview
+spec:
+  hosts:
+  - '*.test-gocloud.democorp.cloud'
+  gateways:
+  - istio-ingress/public-gateway
+  http:
+    # Dynamic PR matches will be inserted here
+    - delegate:
+        name: stable-nginx
+        namespace: preview

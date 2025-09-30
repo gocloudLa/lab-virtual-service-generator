@@ -1,0 +1,198 @@
+name: Generate Virtual Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      TARGET_BRANCH:
+        description: 'Target branch to check for PRs'
+        required: false
+        default: 'development'
+        type: string
+      VIRTUAL_SERVICE_NAME:
+        description: 'Name for the generated VirtualService'
+        required: false
+        default: 'core-webapp-root'
+        type: string
+      NAMESPACE:
+        description: 'Kubernetes namespace'
+        required: false
+        default: 'preview'
+        type: string
+      CORE_HEADER_NAME:
+        description: 'Name for the core header (default: x-gocloud-vo-core)'
+        required: false
+        default: 'x-gocloud-vo-core'
+        type: string
+
+jobs:
+  generate-virtual-service:
+    runs-on: [self-hosted, al-if-sre-k8s-as-runner-core]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch PRs with preview-stg label
+        id: fetch-prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ inputs.TARGET_BRANCH || 'development' }}
+        run: |
+          echo "🔍 Searching for open PRs to branch: $TARGET_BRANCH with label 'preview-stg'"
+          
+          # Obtener PRs abiertos hacia TARGET_BRANCH
+          PRS_JSON=$(gh api -X GET \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/pulls?state=open&base=$TARGET_BRANCH")
+          
+          echo "📋 Found PRs:"
+          echo "$PRS_JSON" | jq -r '.[] | "PR #\(.number): \(.head.ref) - Labels: \(.labels | map(.name) | join(", "))"'
+          
+          # Filtrar PRs que tengan el label 'preview-stg'
+          FILTERED_PRS=$(echo "$PRS_JSON" | jq -r --arg target_branch "$TARGET_BRANCH" '
+            [.[] | 
+              select(.labels | map(.name) | contains(["preview-stg"])) |
+              {
+                number: .number,
+                branch: .head.ref,
+                title: .title
+              }
+            ]')
+          
+          echo "✅ PRs with 'preview-stg' label:"
+          echo "$FILTERED_PRS" | jq -r '.[] | "PR #\(.number): \(.branch) - \(.title)"'
+          
+          # Contar PRs
+          PR_COUNT=$(echo "$FILTERED_PRS" | jq 'length')
+          echo "📊 Total PRs found: $PR_COUNT"
+          
+          # Guardar en outputs
+          echo "prs_json=$FILTERED_PRS" >> $GITHUB_OUTPUT
+          echo "pr_count=$PR_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Generate Virtual Service
+        id: generate-vs
+        env:
+          VIRTUAL_SERVICE_NAME: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}
+          NAMESPACE: ${{ inputs.NAMESPACE || 'preview' }}
+          CORE_HEADER_NAME: ${{ inputs.CORE_HEADER_NAME || 'x-gocloud-vo-core' }}
+        run: |
+          PRS_JSON='${{ steps.fetch-prs.outputs.prs_json }}'
+          PR_COUNT='${{ steps.fetch-prs.outputs.pr_count }}'
+          
+          echo "🚀 Generating Virtual Service with $PR_COUNT PRs"
+          echo "📝 VirtualService name: $VIRTUAL_SERVICE_NAME"
+          echo "📝 Namespace: $NAMESPACE"
+          echo "📝 Core header name: $CORE_HEADER_NAME"
+          
+          # Crear archivo temporal para el VirtualService generado
+          GENERATED_FILE="generated-virtual-service.yml"
+          
+          # Copiar el template
+          cp .github/virtual-service-template.yml "$GENERATED_FILE"
+          
+          # Generar matches dinámicos
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "📝 Generating dynamic matches..."
+            
+            # Crear archivo temporal para los matches
+            MATCHES_FILE=$(mktemp)
+            
+            # Procesar cada PR
+            echo "$PRS_JSON" | jq -r '.[] | "\(.number)|\(.branch)"' | while IFS='|' read -r pr_number branch_name; do
+              echo "  🔧 Processing PR #$pr_number with branch: $branch_name"
+              
+              # Agregar match para el header core
+              cat >> "$MATCHES_FILE" <<- EOT
+                - match:
+                  - headers:
+                      $CORE_HEADER_NAME:
+                        exact: $branch_name
+                  delegate:
+                    name: pr$pr_number-nginx
+                    namespace: $NAMESPACE
+              EOT
+              
+              # Agregar match para x-gocloud-vo-all
+              cat >> "$MATCHES_FILE" <<- EOT
+                - match:
+                  - headers:
+                      x-gocloud-vo-all:
+                        exact: $branch_name
+                  delegate:
+                    name: pr$pr_number-nginx
+                    namespace: $NAMESPACE
+              EOT
+            done
+            
+            # Insertar los matches antes del delegate stable-nginx
+            # Crear archivo temporal con el contenido final
+            FINAL_FILE=$(mktemp)
+            
+            # Copiar hasta el comentario
+            head -n -2 "$GENERATED_FILE" > "$FINAL_FILE"
+            
+            # Agregar los matches
+            cat "$MATCHES_FILE" >> "$FINAL_FILE"
+            
+            # Agregar el delegate final
+            echo "  - delegate:" >> "$FINAL_FILE"
+            echo "      name: stable-nginx" >> "$FINAL_FILE"
+            echo "      namespace: $NAMESPACE" >> "$FINAL_FILE"
+            
+            # Reemplazar el archivo original
+            mv "$FINAL_FILE" "$GENERATED_FILE"
+            
+            # Limpiar archivos temporales
+            rm -f "$MATCHES_FILE"
+          else
+            echo "ℹ️  No PRs found, using template as-is"
+            # Actualizar el namespace en el delegate final
+            sed -i "s/namespace: preview/namespace: $NAMESPACE/g" "$GENERATED_FILE"
+          fi
+          
+          # Actualizar el nombre del VirtualService
+          sed -i "s/name: core-webapp-root/name: $VIRTUAL_SERVICE_NAME/g" "$GENERATED_FILE"
+          
+          echo "✅ Virtual Service generated successfully!"
+          echo "📄 Generated file: $GENERATED_FILE"
+          
+          # Guardar ruta del archivo en output
+          echo "generated_file=$GENERATED_FILE" >> $GITHUB_OUTPUT
+
+      - name: Display Generated Virtual Service
+        run: |
+          GENERATED_FILE='${{ steps.generate-vs.outputs.generated_file }}'
+          
+          echo "🎯 ==============================================="
+          echo "🎯 GENERATED VIRTUAL SERVICE"
+          echo "🎯 ==============================================="
+          echo ""
+          
+          # Mostrar el archivo generado
+          cat "$GENERATED_FILE"
+          
+          echo ""
+          echo "🎯 ==============================================="
+          echo "🎯 END OF GENERATED VIRTUAL SERVICE"
+          echo "🎯 ==============================================="
+
+      - name: Upload Generated Virtual Service
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-virtual-service
+          path: generated-virtual-service.yml
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          PR_COUNT='${{ steps.fetch-prs.outputs.pr_count }}'
+          echo "📊 ==============================================="
+          echo "📊 GENERATION SUMMARY"
+          echo "📊 ==============================================="
+          echo "✅ Target branch: ${{ inputs.TARGET_BRANCH || 'development' }}"
+          echo "✅ VirtualService name: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}"
+          echo "✅ Namespace: ${{ inputs.NAMESPACE || 'preview' }}"
+          echo "✅ Core header name: ${{ inputs.CORE_HEADER_NAME || 'x-gocloud-vo-core' }}"
+          echo "✅ PRs found with 'preview-stg' label: $PR_COUNT"
+          echo "✅ Virtual Service generated: generated-virtual-service.yml"
+          echo "📊 ==============================================="
