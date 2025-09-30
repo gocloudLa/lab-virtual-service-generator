@@ -47,7 +47,7 @@ jobs:
           echo "📋 Found PRs:"
           echo "$PRS_JSON" | jq -r '.[] | "PR #\(.number): \(.head.ref) - Labels: \(.labels | map(.name) | join(", "))"'
           
-          # Filtrar PRs que tengan el label 'preview-stg'
+          # Filtrar PRs que tengan el label 'preview-stg' y ordenar por número ascendente
           FILTERED_PRS=$(echo "$PRS_JSON" | jq -r --arg target_branch "$TARGET_BRANCH" '
             [.[] | 
               select(.labels | map(.name) | contains(["preview-stg"])) |
@@ -56,7 +56,7 @@ jobs:
                 branch: .head.ref,
                 title: .title
               }
-            ]')
+            ] | sort_by(.number)')
           
           echo "✅ PRs with 'preview-stg' label:"
           echo "$FILTERED_PRS" | jq -r '.[] | "PR #\(.number): \(.branch) - \(.title)"'
@@ -103,28 +103,47 @@ jobs:
           if [ "$PR_COUNT" -gt 0 ]; then
             echo "📝 Generating dynamic matches..."
             
-            # Procesar cada PR y agregar matches directamente al archivo
+            # Crear archivos temporales para cada tipo de match
+            SPECIFIC_MATCHES_FILE=$(mktemp)
+            GLOBAL_MATCHES_FILE=$(mktemp)
+            
+            # Procesar cada PR y generar matches en archivos separados (ya están ordenados)
             echo "$PRS_JSON" | jq -r '.[] | "\(.number)|\(.branch)"' | while IFS='|' read -r pr_number branch_name; do
               echo "  🔧 Processing PR #$pr_number with branch: $branch_name"
               
-              # Agregar match para el header core
-              echo "  - match:" >> "$GENERATED_FILE"
-              echo "    - headers:" >> "$GENERATED_FILE"
-              echo "        ${{ inputs.CORE_HEADER_NAME }}:" >> "$GENERATED_FILE"
-              echo "          exact: $branch_name" >> "$GENERATED_FILE"
-              echo "    delegate:" >> "$GENERATED_FILE"
-              echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
-              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
+              # Agregar match para el header core (específico)
+              echo "  - match:" >> "$SPECIFIC_MATCHES_FILE"
+              echo "    - headers:" >> "$SPECIFIC_MATCHES_FILE"
+              echo "        ${{ inputs.CORE_HEADER_NAME }}:" >> "$SPECIFIC_MATCHES_FILE"
+              echo "          exact: $branch_name" >> "$SPECIFIC_MATCHES_FILE"
+              echo "    delegate:" >> "$SPECIFIC_MATCHES_FILE"
+              echo "      name: pr$pr_number-nginx" >> "$SPECIFIC_MATCHES_FILE"
+              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$SPECIFIC_MATCHES_FILE"
               
-              # Agregar match para x-gocloud-vo-all
-              echo "  - match:" >> "$GENERATED_FILE"
-              echo "    - headers:" >> "$GENERATED_FILE"
-              echo "        x-gocloud-vo-all:" >> "$GENERATED_FILE"
-              echo "          exact: $branch_name" >> "$GENERATED_FILE"
-              echo "    delegate:" >> "$GENERATED_FILE"
-              echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
-              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
+              # Agregar match para x-gocloud-vo-all (global)
+              echo "  - match:" >> "$GLOBAL_MATCHES_FILE"
+              echo "    - headers:" >> "$GLOBAL_MATCHES_FILE"
+              echo "        x-gocloud-vo-all:" >> "$GLOBAL_MATCHES_FILE"
+              echo "          exact: $branch_name" >> "$GLOBAL_MATCHES_FILE"
+              echo "    delegate:" >> "$GLOBAL_MATCHES_FILE"
+              echo "      name: pr$pr_number-nginx" >> "$GLOBAL_MATCHES_FILE"
+              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GLOBAL_MATCHES_FILE"
             done
+            
+            # Agregar primero todos los matches específicos (core)
+            if [ -s "$SPECIFIC_MATCHES_FILE" ]; then
+              echo "📝 Adding specific header matches (core)..."
+              cat "$SPECIFIC_MATCHES_FILE" >> "$GENERATED_FILE"
+            fi
+            
+            # Luego agregar todos los matches globales (all)
+            if [ -s "$GLOBAL_MATCHES_FILE" ]; then
+              echo "📝 Adding global header matches (all)..."
+              cat "$GLOBAL_MATCHES_FILE" >> "$GENERATED_FILE"
+            fi
+            
+            # Limpiar archivos temporales
+            rm -f "$SPECIFIC_MATCHES_FILE" "$GLOBAL_MATCHES_FILE"
           else
             echo "ℹ️  No PRs found, using template as-is"
           fi
