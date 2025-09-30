@@ -34,7 +34,7 @@ on:
 
 jobs:
   generate-virtual-service:
-    uses: ./.github/workflows/generate-virtual-service-job.yml
+    uses: ./.github/workflows/shared-generate-virtual-service.yml
     with:
       TARGET_BRANCH: ${{ inputs.TARGET_BRANCH || 'development' }}
       VIRTUAL_SERVICE_NAME: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}
