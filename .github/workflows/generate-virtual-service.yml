@@ -26,6 +26,11 @@ on:
         required: false
         default: 'x-gocloud-vo-core'
         type: string
+      HOST_PATTERN:
+        description: 'Host pattern for the VirtualService (default: *.test-gocloud.democorp.cloud)'
+        required: false
+        default: '*.test-gocloud.democorp.cloud'
+        type: string
 
 jobs:
   generate-virtual-service:
@@ -76,30 +81,31 @@ jobs:
 
       - name: Generate Virtual Service
         id: generate-vs
-        env:
-          VIRTUAL_SERVICE_NAME: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}
-          NAMESPACE: ${{ inputs.NAMESPACE || 'preview' }}
-          CORE_HEADER_NAME: ${{ inputs.CORE_HEADER_NAME || 'x-gocloud-vo-core' }}
         run: |
           PRS_JSON='${{ steps.fetch-prs.outputs.prs_json }}'
           PR_COUNT='${{ steps.fetch-prs.outputs.pr_count }}'
           
           echo "🚀 Generating Virtual Service with $PR_COUNT PRs"
-          echo "📝 VirtualService name: $VIRTUAL_SERVICE_NAME"
-          echo "📝 Namespace: $NAMESPACE"
-          echo "📝 Core header name: $CORE_HEADER_NAME"
+          echo "📝 VirtualService name: ${{ inputs.VIRTUAL_SERVICE_NAME }}"
+          echo "📝 Namespace: ${{ inputs.NAMESPACE }}"
+          echo "📝 Core header name: ${{ inputs.CORE_HEADER_NAME }}"
+          echo "📝 Host pattern: ${{ inputs.HOST_PATTERN }}"
           
           # Crear archivo temporal para el VirtualService generado
           GENERATED_FILE="generated-virtual-service.yml"
           
-          # Copiar el template
-          cp .github/virtual-service-template.yml "$GENERATED_FILE"
-          
-          # Aplicar variables dinámicas usando yq
-          yq eval ".metadata.name = \"$VIRTUAL_SERVICE_NAME\"" -i "$GENERATED_FILE"
-          yq eval ".metadata.namespace = \"$NAMESPACE\"" -i "$GENERATED_FILE"
-          yq eval ".metadata.annotations.\"meta.helm.sh/release-namespace\" = \"$NAMESPACE\"" -i "$GENERATED_FILE"
-          yq eval ".spec.http[0].delegate.namespace = \"$NAMESPACE\"" -i "$GENERATED_FILE"
+          # Generar el VirtualService completo desde cero
+          echo "kind: VirtualService" > "$GENERATED_FILE"
+          echo "apiVersion: networking.istio.io/v1" >> "$GENERATED_FILE"
+          echo "metadata:" >> "$GENERATED_FILE"
+          echo "  name: ${{ inputs.VIRTUAL_SERVICE_NAME }}" >> "$GENERATED_FILE"
+          echo "  namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
+          echo "spec:" >> "$GENERATED_FILE"
+          echo "  hosts:" >> "$GENERATED_FILE"
+          echo "  - '${{ inputs.HOST_PATTERN }}'" >> "$GENERATED_FILE"
+          echo "  gateways:" >> "$GENERATED_FILE"
+          echo "  - istio-ingress/public-gateway" >> "$GENERATED_FILE"
+          echo "  http:" >> "$GENERATED_FILE"
           
           # Generar matches dinámicos
           if [ "$PR_COUNT" -gt 0 ]; then
@@ -112,11 +118,11 @@ jobs:
               # Agregar match para el header core
               echo "  - match:" >> "$GENERATED_FILE"
               echo "    - headers:" >> "$GENERATED_FILE"
-              echo "        $CORE_HEADER_NAME:" >> "$GENERATED_FILE"
+              echo "        ${{ inputs.CORE_HEADER_NAME }}:" >> "$GENERATED_FILE"
               echo "          exact: $branch_name" >> "$GENERATED_FILE"
               echo "    delegate:" >> "$GENERATED_FILE"
               echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
-              echo "      namespace: $NAMESPACE" >> "$GENERATED_FILE"
+              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
               
               # Agregar match para x-gocloud-vo-all
               echo "  - match:" >> "$GENERATED_FILE"
@@ -125,11 +131,16 @@ jobs:
               echo "          exact: $branch_name" >> "$GENERATED_FILE"
               echo "    delegate:" >> "$GENERATED_FILE"
               echo "      name: pr$pr_number-nginx" >> "$GENERATED_FILE"
-              echo "      namespace: $NAMESPACE" >> "$GENERATED_FILE"
+              echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
             done
           else
             echo "ℹ️  No PRs found, using template as-is"
           fi
+          
+          # Agregar el delegate final (stable-nginx)
+          echo "  - delegate:" >> "$GENERATED_FILE"
+          echo "      name: stable-nginx" >> "$GENERATED_FILE"
+          echo "      namespace: ${{ inputs.NAMESPACE }}" >> "$GENERATED_FILE"
           
           echo "✅ Virtual Service generated successfully!"
           echo "📄 Generated file: $GENERATED_FILE"
@@ -167,10 +178,11 @@ jobs:
           echo "📊 ==============================================="
           echo "📊 GENERATION SUMMARY"
           echo "📊 ==============================================="
-          echo "✅ Target branch: ${{ inputs.TARGET_BRANCH || 'development' }}"
-          echo "✅ VirtualService name: ${{ inputs.VIRTUAL_SERVICE_NAME || 'core-webapp-root' }}"
-          echo "✅ Namespace: ${{ inputs.NAMESPACE || 'preview' }}"
-          echo "✅ Core header name: ${{ inputs.CORE_HEADER_NAME || 'x-gocloud-vo-core' }}"
+          echo "✅ Target branch: ${{ inputs.TARGET_BRANCH }}"
+          echo "✅ VirtualService name: ${{ inputs.VIRTUAL_SERVICE_NAME }}"
+          echo "✅ Namespace: ${{ inputs.NAMESPACE }}"
+          echo "✅ Core header name: ${{ inputs.CORE_HEADER_NAME }}"
+          echo "✅ Host pattern: ${{ inputs.HOST_PATTERN }}"
           echo "✅ PRs found with 'preview-stg' label: $PR_COUNT"
           echo "✅ Virtual Service generated: generated-virtual-service.yml"
           echo "📊 ==============================================="
