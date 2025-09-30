@@ -34,12 +34,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install yq
-        run: |
-          which yq || true
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
       - name: Fetch PRs with preview-stg label
         id: fetch-prs
         env:
@@ -74,8 +68,10 @@ jobs:
           PR_COUNT=$(echo "$FILTERED_PRS" | jq 'length')
           echo "📊 Total PRs found: $PR_COUNT"
           
-          # Guardar en outputs
-          echo "prs_json=$FILTERED_PRS" >> $GITHUB_OUTPUT
+          # Guardar en outputs (escapar el JSON)
+          echo "prs_json<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILTERED_PRS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "pr_count=$PR_COUNT" >> $GITHUB_OUTPUT
 
       - name: Generate Virtual Service
