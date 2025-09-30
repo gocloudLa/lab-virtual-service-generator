@@ -113,10 +113,10 @@ jobs:
               echo "  🔧 Processing PR #$pr_number with branch: $branch_name"
               
               # Agregar match para el header core
-              MATCHES_PARTICULAR=$(printf "- match:\n  - headers:\n      %s:\n        exact: %s\n  delegate:\n    name: pr%s-nginx\n    namespace: %s\n" "$CORE_HEADER_NAME" "$branch_name" "$pr_number" "$NAMESPACE")
+              MATCHES_PARTICULAR=$(printf "  - match:\n    - headers:\n        %s:\n          exact: %s\n    delegate:\n      name: pr%s-nginx\n      namespace: %s" "$CORE_HEADER_NAME" "$branch_name" "$pr_number" "$NAMESPACE")
               
               # Agregar match para x-gocloud-vo-all
-              MATCHES_GLOBAL=$(printf "- match:\n  - headers:\n      x-gocloud-vo-all:\n        exact: %s\n  delegate:\n    name: pr%s-nginx\n    namespace: %s\n" "$branch_name" "$pr_number" "$NAMESPACE")
+              MATCHES_GLOBAL=$(printf "  - match:\n    - headers:\n        x-gocloud-vo-all:\n          exact: %s\n    delegate:\n      name: pr%s-nginx\n      namespace: %s" "$branch_name" "$pr_number" "$NAMESPACE")
             done
             
             # Agregar los matches al archivo usando las variables
