@@ -1,6 +1,9 @@
 name: Generate Virtual Service
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       TARGET_BRANCH:
@@ -95,14 +98,14 @@ jobs:
             echo "📝 Generating dynamic matches..."
             
             # Crear archivo temporal para los matches
-            MATCHES_FILE=$(mktemp)
+            # MATCHES_FILE=$(mktemp)
             
             # Procesar cada PR
             echo "$PRS_JSON" | jq -r '.[] | "\(.number)|\(.branch)"' | while IFS='|' read -r pr_number branch_name; do
               echo "  🔧 Processing PR #$pr_number with branch: $branch_name"
               
               # Agregar match para el header core
-              cat >> "$MATCHES_FILE" <<- EOT
+              "MATCHES_PARTICULAR" = <<-EOT
                 - match:
                   - headers:
                       $CORE_HEADER_NAME:
@@ -113,7 +116,7 @@ jobs:
               EOT
               
               # Agregar match para x-gocloud-vo-all
-              cat >> "$MATCHES_FILE" <<- EOT
+              "$MATCHES_GLOBAL" = <<-EOT
                 - match:
                   - headers:
                       x-gocloud-vo-all:
@@ -123,6 +126,10 @@ jobs:
                     namespace: $NAMESPACE
               EOT
             done
+            
+            # Agregar los matches al archivo usando las variables
+            echo "$MATCHES_PARTICULAR" >> "$MATCHES_FILE"
+            echo "$MATCHES_GLOBAL" >> "$MATCHES_FILE"
             
             # Insertar los matches antes del delegate stable-nginx
             # Crear archivo temporal con el contenido final
